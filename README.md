@@ -7,7 +7,10 @@
     - [Row Number](#row-number)
     - [Rank and Dense Rank](#rank-and-dense-rank)    
     - [Lag and Lead](#lag-and-lead)   
-    - [Percentile Cont](#percentile-cont) 
+    - [Percentile Cont](#percentile-cont)
+- [Common Table Expression](#common-table-expression)
+- [dbt models and CTEs](#dbt-models-and-ctes)
+
 
 
 ## Window Funtions    
@@ -249,3 +252,123 @@ Query results looks like this:
 
 The P90 value is essentially the amount below which 90% of the values fall. In this table, the P90 
 is constant at 51.9, which means that for location "224", 90% of the total amounts are below 51.9.
+
+
+
+## Common Table Expression
+
+A CTE, short for Common Table Expression, is like a query within a query. With the WITH statement, you can create temporary tables to store results, making complex queries more readable and maintainable. These temporary tables exist only for the duration of the main query.
+
+CTEs and subqueries are both powerful tools and can be used to achieve similar goals, but they have different use cases and advantages. Differences are CTE is reusable during the entire session and more readable
+
+By declaring CTEs at the beginning of the query, you enhance code readability, enabling a clearer grasp of your analysis logic. 
+
+**Syntax:**
+
+```sql
+
+WITH cte_name AS (
+    SELECT column1, column2
+    FROM some_table
+    WHERE condition
+)
+SELECT * FROM cte_name;
+```
+
+**Example: Let's find the trip with the second largest total_amount**
+
+```sql
+
+WITH cte AS(
+
+  SELECT
+  lpep_pickup_datetime,
+  total_amount,
+  RANK() OVER (ORDER BY total_amount DESC) AS rank
+
+  FROM `greentaxi_trips` 
+
+)
+
+
+SELECT * FROM cte WHERE rank = 2;
+
+```
+
+The query starts with a Common Table Expression (CTE) named cte. We use the RANK() window function to 
+assign a ranking (rank) to each row based on total_amount in descending order (from highest to lowest).
+
+Now, we use the CTE in the main query: ```SELECT * FROM cte WHERE rank = 2;```
+
+Result of the query:
+
+
+| lpep_pickup_datetime      | total_amount | rank | 
+|---------------------------|--------------|-------------------|
+| 2019-10-10 15:22:49 UTC  | 2878.3        | 2             | 
+
+
+
+## dbt models and CTEs
+
+CTEs and window functions will be used a lot in module 4 on dbt. Let's see an example of application in dbt models
+
+**Example:**
+
+Suppose we start from the FHV dataset and we want to create a dbt model that enriches the data by calculating the trip duration and the 90th percentile.
+
+```sql
+
+WITH trip_duration_calculated AS (
+
+    SELECT
+        *,
+        timestamp_diff(dropOff_datetime, pickup_datetime, second) as trip_duration
+
+    FROM `fhv_trips`
+)
+
+SELECT 
+
+    PUlocationID,
+    trip_duration,
+    PERCENTILE_CONT(trip_duration, 0.90) OVER (PARTITION BY PUlocationID) AS trip_duration_p90
+
+
+FROM trip_duration_calculated
+
+
+```
+
+**Step 1: Understanding the CTE**
+
+The WITH clause creates a CTE named trip_duration_calculated. This CTE acts as a temporary table that 
+contains all columns from the fhv_trips table. Additionally, it calculates the trip duration for each ride
+
+**Step 2: Main Query using the CTE and Window Function**
+
+This query computes the 90th percentile of trip duration for each PUlocationID using a window function:
+
+The PARTITION BY PUlocationID clause ensures that the percentile calculation is performed separately 
+for each unique PUlocationID.
+
+The percentile 90 means that 90% of the trips have a duration equal to or below this value
+
+**Query result looks like this:**
+
+| PUlocationID | trip_duration | trip_duration_p90 |
+|-------------|---------------|--------------------|
+| 190         | 451           | 2170.0            |
+| 190         | 1373          | 2170.0            |
+| 190         | 817           | 2170.0            |
+| 190         | 589           | 2170.0            |
+| 190         | 1648          | 2170.0            |
+| 32          | 546           | 1988.0            |
+| 32          | 151           | 1988.0            |
+| 32          | 1752          | 1988.0            |
+| 32          | 2426          | 1988.0            |
+| 32          | 888           | 1988.0            |
+
+
+- For PUlocationID = 190, 90% of trips have a duration ≤ 2170.0   seconds.
+- For PUlocationID = 32, 90% of trips have a duration ≤ 1988.0  seconds.
